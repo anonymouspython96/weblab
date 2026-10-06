@@ -1,51 +1,70 @@
 /*
-  MARIO ROSSI & FIGLI — BUG INTENZIONALE
-  Demo didattica per il format "It's not a bug. It's a feature."
-  La pagina introduce volutamente un Long Task JavaScript di ~4,2 secondi.
-  Per il fix: cambia BUG_MODE da true a false.
+ VERSIONE CORRETTA
+
+ 1) Promise.all(): le chiamate indipendenti partono insieme.
+ 2) slice(): usiamo solo i record che ci servono per la UI.
+ 3) DocumentFragment: costruiamo le card fuori dal DOM e facciamo una
+    sola modifica importante alla pagina.
+
+ In produzione la correzione migliore sarebbe anche lato server:
+ paginazione + ricerca + select dei soli campi necessari.
 */
-const BUG_MODE = false;
-const BLOCK_MS = 4200;
 
-function busyWait(ms) {
-  const start = performance.now();
-  let checksum = 0;
-  while (performance.now() - start < ms) {
-    checksum += Math.sqrt(Math.random() * 1000000);
-  }
-  return checksum;
+const API={profile:"./api/profile.json",stats:"./api/stats.json",offers:"./api/offerte.json"};
+const VISIBLE=12;
+
+async function getJson(url){
+  const response=await fetch(url);
+  if(!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
 }
 
-function setMenu() {
-  const toggle = document.querySelector('.menu-toggle');
-  const nav = document.querySelector('.nav');
-  if (!toggle || !nav) return;
-  toggle.addEventListener('click', () => {
-    const visible = nav.dataset.mobileOpen === 'true';
-    nav.dataset.mobileOpen = String(!visible);
-    nav.style.display = visible ? '' : 'flex';
-    nav.style.position = 'absolute';
-    nav.style.top = '82px'; nav.style.right = '12px'; nav.style.left = '12px';
-    nav.style.padding = '14px'; nav.style.flexDirection = 'column';
-    nav.style.background = 'rgba(246,244,237,.98)';
-    nav.style.border = '1px solid rgba(23,32,28,.12)';
-    nav.style.borderRadius = '18px';
+function makeCard(offer){
+  const card=document.createElement("article");
+  card.className="offer-card";
+  card.innerHTML=`
+    <div class="offer-top"><b>${offer.company}</b><span>${offer.city}</span></div>
+    <h3>${offer.title}</h3>
+    <p>${offer.description}</p>
+    <div class="offer-meta"><span>${offer.contract}</span><span>€ ${offer.salaryMin.toLocaleString("it-IT")}–${offer.salaryMax.toLocaleString("it-IT")}</span></div>`;
+  return card;
+}
+
+function renderBetter(offers){
+  const list=document.getElementById("offers");
+  const fragment=document.createDocumentFragment();
+
+  // La UI necessita solo di una porzione dell'array.
+  offers.slice(0,VISIBLE).forEach(offer=>fragment.appendChild(makeCard(offer)));
+
+  // Un'unica append sul DOM.
+  list.replaceChildren(fragment);
+}
+
+async function init(){
+  document.getElementById("loading-state").textContent="Caricamento dashboard…";
+
+  // Le richieste sono indipendenti: partono contemporaneamente.
+  const [profile,stats,offers]=await Promise.all([
+    getJson(API.profile),getJson(API.stats),getJson(API.offers)
+  ]);
+
+  document.getElementById("candidate-name").textContent=`${profile.firstName} ${profile.lastName}`;
+  document.getElementById("candidate-role").textContent=profile.role;
+  document.getElementById("stat-applications").textContent=stats.newApplications;
+  document.getElementById("stat-searches").textContent=stats.savedSearches;
+  document.getElementById("stat-profile").textContent=`${stats.profileCompletion}%`;
+  document.getElementById("stat-offers").textContent=stats.recommendedJobs;
+
+  renderBetter(offers);
+  document.getElementById("loading-state").textContent=`Dashboard pronta — ${VISIBLE} offerte visibili`;
+}
+
+document.addEventListener("DOMContentLoaded",()=>{
+  const form=document.getElementById("demo-form");
+  form.addEventListener("submit",e=>{
+    e.preventDefault();
+    e.currentTarget.querySelector("button").textContent="Richiesta simulata ✓";
   });
-}
-
-function wireForm() {
-  const form = document.getElementById('demo-form');
-  if (!form) return;
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const button = form.querySelector('button');
-    button.textContent = 'Richiesta simulata ✓';
-    button.disabled = true;
-  });
-}
-
-window.addEventListener('load', () => {
-  if (BUG_MODE) busyWait(BLOCK_MS); // BUG: blocca il main thread.
-  setMenu();
-  wireForm();
+  init().catch(err=>console.error(err));
 });
